@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Board</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --card-bg: #f5f5f5;
+            --border-color: #e0e0e0;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1a1a1a;
+                --text-color: #e0e0e0;
+                --card-bg: #2d2d2d;
+                --border-color: #404040;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+            }
+        }
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .column {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .column h2 {
+            margin: 0 0 16px 0;
+            font-size: 1.2em;
+        }
+        .task {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: move;
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        .task-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin-bottom: 16px;
+        }
+        .delete-btn {
+            float: right;
+            cursor: pointer;
+            opacity: 0.6;
+        }
+        .delete-btn:hover {
+            opacity: 1;
+        }
+        .task.dragging {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="board">
+        <div class="column" data-column="todo">
+            <h2>Todo</h2>
+            <input type="text" class="task-input" placeholder="新しいタスクを追加">
+            <div class="tasks"></div>
+        </div>
+        <div class="column" data-column="doing">
+            <h2>Doing</h2>
+            <input type="text" class="task-input" placeholder="新しいタスクを追加">
+            <div class="tasks"></div>
+        </div>
+        <div class="column" data-column="done">
+            <h2>Done</h2>
+            <input type="text" class="task-input" placeholder="新しいタスクを追加">
+            <div class="tasks"></div>
+        </div>
+    </div>
+    <script>
+        // タスクの状態管理
+        let tasks = {
+            todo: [],
+            doing: [],
+            done: []
+        };
+
+        // DOMロード時の初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTasks();
+            setupEventListeners();
+        });
+
+        // イベントリスナーの設定
+        function setupEventListeners() {
+            document.querySelectorAll('.task-input').forEach(input => {
+                input.addEventListener('keypress', e => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                        const column = e.target.closest('.column').dataset.column;
+                        addTask(column, e.target.value.trim());
+                        e.target.value = '';
+                    }
+                });
+            });
+        }
+
+        // タスクの追加
+        function addTask(column, text) {
+            const task = { id: Date.now(), text };
+            tasks[column].push(task);
+            renderTask(column, task);
+            saveTasks();
+        }
+
+        // タスクの描画
+        function renderTask(column, task) {
+            const taskElement = document.createElement('div');
+            taskElement.className = 'task';
+            taskElement.draggable = true;
+            taskElement.dataset.id = task.id;
+
+            taskElement.innerHTML = `
+                ${task.text}
+                <span class="delete-btn" onclick="deleteTask('${column}', ${task.id})">✕</span>
+            `;
+
+            setupDragListeners(taskElement);
+            document.querySelector(`[data-column="${column}"] .tasks`).appendChild(taskElement);
+        }
+
+        // タスクの削除
+        function deleteTask(column, id) {
+            tasks[column] = tasks[column].filter(task => task.id !== id);
+            saveTasks();
+            renderAllTasks();
+        }
+
+        // ドラッグ＆ドロップの設定
+        function setupDragListeners(taskElement) {
+            taskElement.addEventListener('dragstart', e => {
+                e.target.classList.add('dragging');
+                e.dataTransfer.setData('text/plain', e.target.dataset.id);
+            });
+
+            taskElement.addEventListener('dragend', e => {
+                e.target.classList.remove('dragging');
+            });
+
+            const columns = document.querySelectorAll('.column');
+            columns.forEach(column => {
+                column.addEventListener('dragover', e => {
+                    e.preventDefault();
+                });
+
+                column.addEventListener('drop', e => {
+                    e.preventDefault();
+                    const id = Number(e.dataTransfer.getData('text/plain'));
+                    const sourceColumn = findTaskColumn(id);
+                    const targetColumn = column.dataset.column;
+
+                    if (sourceColumn && sourceColumn !== targetColumn) {
+                        moveTask(id, sourceColumn, targetColumn);
+                    }
+                });
+            });
+        }
+
+        // タスクの移動
+        function moveTask(id, fromColumn, toColumn) {
+            const taskIndex = tasks[fromColumn].findIndex(task => task.id === id);
+            if (taskIndex !== -1) {
+                const task = tasks[fromColumn][taskIndex];
+                tasks[fromColumn].splice(taskIndex, 1);
+                tasks[toColumn].push(task);
+                saveTasks();
+                renderAllTasks();
+            }
+        }
+
+        // タスクの所属列を検索
+        function findTaskColumn(id) {
+            for (const column in tasks) {
+                if (tasks[column].find(task => task.id === id)) {
+                    return column;
+                }
+            }
+            return null;
+        }
+
+        // 全タスクの再描画
+        function renderAllTasks() {
+            document.querySelectorAll('.tasks').forEach(container => {
+                container.innerHTML = '';
+            });
+            for (const column in tasks) {
+                tasks[column].forEach(task => renderTask(column, task));
+            }
+        }
+
+        // タスクの保存
+        function saveTasks() {
+            localStorage.setItem('kanbanTasks', JSON.stringify(tasks));
+        }
+
+        // タスクの読み込み
+        function loadTasks() {
+            const savedTasks = localStorage.getItem('kanbanTasks');
+            if (savedTasks) {
+                tasks = JSON.parse(savedTasks);
+                renderAllTasks();
+            }
+        }
+    </script>
+</body>
+</html>
